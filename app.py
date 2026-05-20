@@ -10,7 +10,24 @@ app = Flask(__name__)
 def get_pixels():
     data = request.get_json(silent=True) or {}
     url = data.get("url")
-    size = int(data.get("res", 128))
+    width = data.get("width")
+    height = data.get("height")
+
+    # Default to 128x128 if not provided
+    size = 128
+    if width and height:
+        try:
+            width = int(width)
+            height = int(height)
+            size = (width, height)
+        except ValueError:
+            return jsonify({"error": "Invalid width or height"}), 400
+    elif data.get("res"):
+        # fallback to 'res' if width and height are not provided
+        try:
+            size = int(data.get("res"))
+        except ValueError:
+            return jsonify({"error": "Invalid res value"}), 400
 
     if not url:
         return jsonify({"error": "missing url"}), 400
@@ -23,7 +40,6 @@ def get_pixels():
             header, encoded = url.split(",", 1)
             img_bytes = base64.b64decode(encoded)
             img = Image.open(BytesIO(img_bytes))
-
         # -------------------------
         # NORMAL URL IMAGE SUPPORT
         # -------------------------
@@ -57,24 +73,28 @@ def get_pixels():
         # -------------------------
         img = img.convert("RGB")
         # Scale image without stretching
-        img = ImageOps.contain(img, (size, size))
+        if isinstance(size, tuple):
+            target_size = size
+        else:
+            target_size = (size, size)
+        img = ImageOps.contain(img, target_size)
 
-        # Create black square canvas
-        canvas = Image.new("RGB", (size, size), (0, 0, 0))
+        # Create black canvas with specified size
+        canvas = Image.new("RGB", target_size, (0, 0, 0))
         # Center image
-        x = (size - img.width) // 2
-        y = (size - img.height) // 2
+        x = (target_size[0] - img.width) // 2
+        y = (target_size[1] - img.height) // 2
         canvas.paste(img, (x, y))
 
         # Convert to pixel matrix
         pixels = list(canvas.getdata())
         pixel_matrix = [
-            pixels[i * size:(i + 1) * size]
-            for i in range(size)
+            pixels[i * target_size[0]:(i + 1) * target_size[0]]
+            for i in range(target_size[1])
         ]
 
         return jsonify({
-            "size": size,
+            "size": target_size,
             "pixels": pixel_matrix
         })
 
